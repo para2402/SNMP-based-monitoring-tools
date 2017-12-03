@@ -1,0 +1,47 @@
+===============================================================================================================
+                                              TRAP HANDLER
+===============================================================================================================
+
+
+CONTENTS OF THIS FILE
+---------------------
+
+ * Description
+ * Requirements
+
+
+
+
+DESCRIPTION
+-----------
+
+	This tool is an SNMP trap handler functioning as an intermediate manager. The trap handler gets triggered on receiving an SNMP trap (from an SNMP agent) with FQDN (Fully Qualified Domain Name) and Status values as OIDs. These OIDs are enterprise specific OIDs.
+
+Agent Status - Status OID values are as follows:
+  OK	  - 0
+  PROBLEM - 1
+  DANGER  - 2
+  FAIL	  - 3
+
+The trap handler works as follows:
+
+  - If the received agent status is 'OK' or 'PROBLEM', the handler does not send any trap to the Manager of Managers (MoM).
+
+  - If the received agent status is 'DANGER' and if two or more agents are in 'DANGER' state (including the current agent), the handler sends a trap to the MoM with the following values in the variable binding list: FQDN, Unix time when received 'DANGER', Previous status of the agent, Unix time of previous status message for every agent in 'DANGER' state.
+    For example, if there are 2 agents in 'DANGER' state then 8 OIDs are sent, if 4 are in 'DANGER' 16 OIDs are sent, all in a single SNMP trap. The OIDs increase lexicographically.
+
+  - If the received agent status is 'FAIL', the handler sends a trap to the MoM with the following values in the variable binding list: FQDN, Unix time when received 'FAIL', Previous status of the agent, Unix time of previous status message for the agent.
+    For example, if an agent reports a status 'FAIL' then an SNMP trap with 4 OIDs is sent to MoM.
+
+  - In addition to the above actions, the trap handler updates the agent details in the MySQL database and logs the trap to a file, for every trap received.
+
+  - The trap handler has a simple web GUI through which details of MoM (IP address, Port and Community) can be provided. Details of all agents that have triggered the trap handler are also displayed.
+
+
+
+REQUIREMENTS
+------------
+
+ * Perl modules:
+   - Net::SNMP
+   - Data::Dumper

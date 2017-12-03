@@ -1,0 +1,40 @@
+#!/usr/bin/perl
+use DBI;
+use Cwd 'abs_path';
+
+#Finding the path to db.conf
+$cwd = abs_path(__FILE__);
+@finding = split('/', $cwd);
+splice @finding, -2;
+push(@finding, 'db.conf');
+$realpath = join('/', @finding);
+require "$realpath";
+
+#Reading DEVICES table
+$dbd = "mysql"; 
+$dsn = "DBI:$dbd:$database:$host:$port";
+$dbh = DBI->connect($dsn,$username,$password) or die $DBI::errstr;
+
+$query = $dbh->prepare("SELECT * FROM DEVICES");
+$query->execute() or die $DBI::errstr;
+
+system(`mkdir -p /etc/mrtg`);
+system(`cp -R -u -p ~/etc/mrtg.cfg ~/etc/mrtg/mrtg.cfg`);
+system(` kill -9 \`cat /usr/local/etc/mrtg/mrtg.pid\``);
+system(`rm /etc/mrtg/mrtg.pid`);
+
+$command = 'sudo cfgmaker --output=/etc/mrtg/mrtg.cfg --global "WorkDir: /var/www/mrtg" --global "Options[_]: growright" --global "RunAsDaemon: Yes" --global "Interval: 5" --ifref=eth --ifdesc=name,nr';
+
+while($row = $query->fetchrow_hashref())
+{
+	#Constructing a single cfgmake command for all the devices
+	#Don't remove the whitespaces at the begenning and end of the line in ""
+	$command .= " $row->{'COMMUNITY'}\@$row->{'IP'}:$row->{'PORT'} ";
+}
+
+system(`$command`);
+system(`mkdir -p /var/www/mrtg`);
+system(`indexmaker --output=/var/www/mrtg/index.html /etc/mrtg/mrtg.cfg`);
+#system(`sudo service apache2 restart`);
+system("sudo env LANG=C /usr/bin/mrtg /etc/mrtg/mrtg.cfg");
+printf "MRTG configurtion successful!\n";

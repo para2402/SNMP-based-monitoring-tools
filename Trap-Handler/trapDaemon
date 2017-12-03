@@ -1,0 +1,107 @@
+#!/usr/bin/perl
+use DBI;
+use Cwd 'abs_path';
+use Net::SNMP qw(:snmp :asn1);
+use Data::Dumper qw(Dumper);
+
+#Change it before going to the demo
+my $agentaddr = "10.1.0.54";
+#**********************************
+
+#Finding the path to db.conf
+$cwd = abs_path(__FILE__);
+@finding = split('/', $cwd);
+splice @finding, -2;
+push(@finding, 'db.conf');
+$realpath = join('/', @finding);
+require "$realpath";
+
+#Database
+$dbd = "mysql"; 
+$dsn = "DBI:$dbd:$database:$host:$port";
+$dbh = DBI->connect($dsn,$username,$password) or die $DBI::errstr;
+
+
+my $file = "/var/www/html/snmp3";
+open(FILE, ">>$file") or die "Could not open file '$file' $!";
+	my $trap = join('', <STDIN>);
+	my $fqdn = ($trap =~ /iso\.3\.6\.1\.4\.1\.41717\.10\.1\ \"([A-Z|a-z|0-9]+)\"/g)[0];
+	my $status = ($trap =~ /iso\.3\.6\.1\.4\.1\.41717\.10\.2\ ([\d]+)/g)[0];
+	print FILE "-----$fqdn-------$status-----";
+close(FILE);
+
+my $time = time();
+
+if($fqdn ne '' && $status ne '')
+{
+	#Insert phase
+	$dbh->do("INSERT INTO RESULTS3 (Type, FQDN, current_status) VALUES ('AGENT', '$fqdn', '$status')
+				ON DUPLICATE KEY UPDATE prev_status = RESULTS3.current_status, last_message = RESULTS3.last_reported, current_status = '$status'");
+
+	#Update phase
+	$dbh->do("UPDATE RESULTS3 SET last_reported = '$time' WHERE Type = 'AGENT' AND FQDN = '$fqdn'");
+				
+	#Trap sending phase
+	if($status > 1)
+	{
+		my $manager_dataref = $dbh->selectall_hashref("SELECT * from RESULTS3 WHERE Type = 'MANAGER'", 'Type');
+		
+		if($status == 3)			#Trap for Fail
+		{
+			my $agent_dataref = $dbh->selectall_hashref("SELECT * from RESULTS3 WHERE FQDN = '$fqdn'", 'FQDN');
+			trap('1.3.6.1.4.1.41717.20', $manager_dataref, $agent_dataref);
+		}
+		else						#Trap for Danger
+		{
+			my $agent_dataref = $dbh->selectall_hashref("SELECT * from RESULTS3 WHERE current_status = '2'", 'FQDN');
+			if((my $count = keys (%$agent_dataref)) >= 2)
+			{	
+				trap('1.3.6.1.4.1.41717.30', $manager_dataref, $agent_dataref);
+			}
+		}
+	}
+}
+
+
+sub trap()
+{
+	my ($enterprise, $manager_dataref, $agent_dataref) = @_;
+	#print Dumper \@_;
+
+	my $session = Net::SNMP->session(
+									-hostname => $manager_dataref->{'MANAGER'}{'IP'},
+									-port => $manager_dataref->{'MANAGER'}{'PORT'},
+									-community => $manager_dataref->{'MANAGER'}{'COMMUNITY'}   # v1/v2c
+								 );
+
+	if (!defined $session) {
+	  printf "ERROR: %s.\n", $error;
+	  exit 1;
+	}
+
+	my @count = (1..4);
+	my @oids;
+	foreach(keys %$agent_dataref)
+	{
+		push(@oids, "$enterprise.$count[0]",  OCTET_STRING, $_, "$enterprise.$count[1]",  UNSIGNED32, $agent_dataref->{$_}{'last_reported'}, "$enterprise.$count[2]",  INTEGER, $agent_dataref->{$_}{'prev_status'}, "$enterprise.$count[3]",  UNSIGNED32, $agent_dataref->{$_}{'last_message'});		
+		@count = map{$_ + 4} @count;
+	}
+	
+print Dumper \@oids;
+	my  $result = $session->trap(
+									-agentaddr       => $agentaddr,
+									-enterprise      => '1.3.6.1.4.1',
+									-varbindlist     =>	\@oids,
+									-generictrap     => '6',
+									-specifictrap    => '247'
+								);
+
+	if (!defined $result)
+	{
+		printf "ERROR: %s.\n", $session->error();
+		$session->close();
+		exit 1;
+	}
+	
+	$session->close();
+}

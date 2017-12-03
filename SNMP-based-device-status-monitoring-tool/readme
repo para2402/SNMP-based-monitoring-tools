@@ -1,0 +1,38 @@
+===============================================================================================================
+                                  SNMP BASED DEVICE STATUS MONITORING TOOL
+===============================================================================================================
+
+
+CONTENTS OF THIS FILE
+---------------------
+
+ * Description
+ * Requirements
+
+
+
+
+DESCRIPTION
+-----------
+
+The tool is SNMP based device status and uptime monitoring tool. It has a simple web GUI. The tool works as follows:
+
+  - It probes all devices in a table called 'DEVICES' in the MySQL database every 30 seconds.
+
+  - The web GUI displays device IP, PORT, COMMUNITY and status (in the form of color). Furthur information about each device can be accessed by clicking the button corresponding to that device.
+
+  - If a device does not respond, the status color corresponding to the device darkens. For every request lost, the status color darkens and approaches RED (0xFF0000).
+
+  - The tool continues probing non-responsive devices.
+
+  - If a previously non-responsive device responds, then the status color corresponding to it is reset to WHITE (0xFFFFFF)
+
+
+
+
+REQUIREMENTS
+------------
+
+ * Perl modules:
+   * Net::SNMP
+   * Data::Dumper
